@@ -35,30 +35,11 @@ namespace hik_camera
       // 获取句柄，开启相机
       MV_CC_CreateHandle(&camera_handle_, DeviceList.pDeviceInfo[0]);
       MV_CC_OpenDevice(camera_handle_);
-      
-      // 设置相机参数
-      set_value();
-
-      // 获取相机数据
-      MV_CC_GetImageInfo(camera_handle_, &img_info_);
-      image_msg_.data.reserve(img_info_.nHeightMax * img_info_.nWidthMax * 3);
-
-      // 初始化转换参数
-      ConvertParam_.nWidth = img_info_.nWidthValue;
-      ConvertParam_.nHeight = img_info_.nHeightValue;
-      ConvertParam_.enDstPixelType = PixelType_Gvsp_RGB8_Packed;
-
-      // ros2的Qos策略，此处是读取配置文件以决定是否开启sensor_data模式(Best effort和更小的队列深度)（默认开启状态）
-      bool use_sensor_data_qos = this->declare_parameter("use_sensor_data_qos", false);
-      auto qos = use_sensor_data_qos ? rmw_qos_profile_sensor_data : rmw_qos_profile_default;
-      camera_pub_ = image_transport::create_camera_publisher(this, "image_raw", qos);
 
       // 设置相机参数（可调）
       declareParameters();
 
-      MV_CC_StartGrabbing(camera_handle_);
-
-      //camera_info参数的获取
+      // camera_info参数的获取
       camera_name_ = this->declare_parameter("camera_name", "narrow_stereo");
       camera_info_manager_ =
           std::make_unique<camera_info_manager::CameraInfoManager>(this, camera_name_);
@@ -73,6 +54,25 @@ namespace hik_camera
       {
         RCLCPP_WARN(this->get_logger(), "Invalid camera info URL: %s", camera_info_url.c_str());
       }
+
+      // 设置相机参数
+      set_value();
+
+      MV_CC_StartGrabbing(camera_handle_);
+
+      // 获取相机数据
+      MV_CC_GetImageInfo(camera_handle_, &img_info_);
+      image_msg_.data.reserve(img_info_.nHeightMax * img_info_.nWidthMax * 3);
+
+      // 初始化转换参数
+      ConvertParam_.nWidth = img_info_.nWidthValue;
+      ConvertParam_.nHeight = img_info_.nHeightValue;
+      ConvertParam_.enDstPixelType = PixelType_Gvsp_RGB8_Packed;
+
+      // ros2的Qos策略，此处是读取配置文件以决定是否开启sensor_data模式(Best effort和更小的队列深度)（默认开启状态）
+      bool use_sensor_data_qos = this->declare_parameter("use_sensor_data_qos", true);
+      auto qos = use_sensor_data_qos ? rmw_qos_profile_sensor_data : rmw_qos_profile_default;
+      camera_pub_ = image_transport::create_camera_publisher(this, "image_raw", qos);
 
       // ROS2图片msg发布
       params_callback_handle_ = this->add_on_set_parameters_callback(
@@ -148,8 +148,12 @@ namespace hik_camera
       MV_CC_GetFloatValue(camera_handle_, "ExposureTime", &fValue);
       param_desc.integer_range[0].from_value = fValue.fMin;
       param_desc.integer_range[0].to_value = fValue.fMax;
-      double exposure_time = this->declare_parameter("exposure_time", 5000, param_desc);
-      MV_CC_SetFloatValue(camera_handle_, "ExposureTime", exposure_time);
+      double exposure_time = this->declare_parameter("exposure_time", 15000, param_desc);
+      nRet = MV_CC_SetFloatValue(camera_handle_, "ExposureTime", exposure_time);
+      if (MV_OK != nRet)
+      {
+        RCLCPP_WARN(this->get_logger(),"MV_CC_SetFloatValue exposure_time失败,错误码: [%x]", nRet);
+      }
       RCLCPP_INFO(this->get_logger(), "Exposure time: %f", exposure_time);
 
       // 增益
@@ -158,7 +162,11 @@ namespace hik_camera
       param_desc.integer_range[0].from_value = fValue.fMin;
       param_desc.integer_range[0].to_value = fValue.fMax;
       double gain = this->declare_parameter("gain", fValue.fCurValue, param_desc);
-      MV_CC_SetFloatValue(camera_handle_, "Gain", gain);
+      nRet = MV_CC_SetFloatValue(camera_handle_, "Gain", gain);
+      if (MV_OK != nRet)
+      {
+        RCLCPP_WARN(this->get_logger(),"MV_CC_SetFloatValue Gain失败,错误码:[%x]", nRet);
+      }
       RCLCPP_INFO(this->get_logger(), "Gain: %f", gain);
     }
 
@@ -173,14 +181,20 @@ namespace hik_camera
       // 注意，这里对offset的值应当提前归零，防止出现长度溢出问题
       MV_CC_SetIntValue(camera_handle_, "OffsetX", 0);
       MV_CC_SetIntValue(camera_handle_, "OffsetY", 0);
-      MV_CC_SetIntValue(camera_handle_, "Width", this->declare_parameter("image_width", 1280));
-      MV_CC_SetIntValue(camera_handle_, "Height", this->declare_parameter("image_height", 1024));
+
+      //int img_width = this->declare_parameter("image_width", 640);
+      RCLCPP_INFO(this->get_logger(), "Set image_width: [%d]", camera_info_msg_.width);
+      MV_CC_SetIntValue(camera_handle_, "Width", camera_info_msg_.width);
+      
+      //int img_height = this->declare_parameter("image_height", 480);
+      RCLCPP_INFO(this->get_logger(), "Set image_height: [%d]", camera_info_msg_.height);
+      MV_CC_SetIntValue(camera_handle_, "Height", camera_info_msg_.height);
 
       // 设置图像偏移
-      MV_CC_SetIntValue(camera_handle_, "OffsetX", 0);
-      MV_CC_SetIntValue(camera_handle_, "OffsetY", 0);
+      MV_CC_SetIntValue(camera_handle_, "OffsetX", this->declare_parameter("offset_x", 0));
+      MV_CC_SetIntValue(camera_handle_, "OffsetY", this->declare_parameter("offset_y", 0));
 
-      MV_CC_SetEnumValue(camera_handle_, "PixelFormat", PixelType_Gvsp_RGB8_Packed);
+      //MV_CC_SetEnumValue(camera_handle_, "PixelFormat", PixelType_Gvsp_RGB8_Packed);
     }
 
     rcl_interfaces::msg::SetParametersResult parametersCallback(

@@ -26,7 +26,7 @@ def generate_launch_description():
             executable='hik_camera_node',
             output='screen',
             emulate_tty=True,
-            parameters=[LaunchConfiguration('params_file'), {
+            parameters=[LaunchConfiguration('params_file'),{
                 'camera_info_url': LaunchConfiguration('camera_info_url'),
                 'use_sensor_data_qos': LaunchConfiguration('use_sensor_data_qos'),
             }],
