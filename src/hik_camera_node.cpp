@@ -32,15 +32,34 @@ namespace hik_camera
 
       RCLCPP_INFO(this->get_logger(), "Found camera count = %d", DeviceList.nDeviceNum);
 
+      camera_name_ = this->declare_parameter("camera_name", "narrow_stereo");
+
       // 获取句柄，开启相机
-      MV_CC_CreateHandle(&camera_handle_, DeviceList.pDeviceInfo[0]);
+      int findname_flag = 0;
+      int findnum = 0;
+
+      while (findname_flag == 0 && rclcpp::ok())
+      {
+        for (int i = 0; i < (int)DeviceList.nDeviceNum; i++)
+        {
+          std::string str = reinterpret_cast<char*>(DeviceList.pDeviceInfo[i]->SpecialInfo.stUsb3VInfo.chUserDefinedName);
+          if (str == camera_name_)
+          {
+            RCLCPP_INFO(this->get_logger(), "%s",DeviceList.pDeviceInfo[i]->SpecialInfo.stUsb3VInfo.chUserDefinedName);
+            findnum = i;
+            findname_flag = 1;
+          }
+        }
+      }
+
+      MV_CC_CreateHandle(&camera_handle_, DeviceList.pDeviceInfo[findnum]);
       MV_CC_OpenDevice(camera_handle_);
 
       // 设置相机参数（可调）
       declareParameters();
 
       // camera_info参数的获取
-      camera_name_ = this->declare_parameter("camera_name", "narrow_stereo");
+
       camera_info_manager_ =
           std::make_unique<camera_info_manager::CameraInfoManager>(this, camera_name_);
       auto camera_info_url =
@@ -72,9 +91,9 @@ namespace hik_camera
       // ros2的Qos策略，此处是读取配置文件以决定是否开启sensor_data模式(Best effort和更小的队列深度)（默认开启状态）
       bool use_sensor_data_qos = this->declare_parameter("use_sensor_data_qos", true);
       auto qos = use_sensor_data_qos ? rmw_qos_profile_sensor_data : rmw_qos_profile_default;
-      camera_pub_ = image_transport::create_camera_publisher(this, "image_raw", qos);
+      camera_pub_ = image_transport::create_camera_publisher(this, this->declare_parameter("topic_name", "image_raw"), qos);
 
-      // ROS2图片msg发布
+      // ROS2参数msg发布
       params_callback_handle_ = this->add_on_set_parameters_callback(
           std::bind(&HikCameraNode::parametersCallback, this, std::placeholders::_1));
 
@@ -152,7 +171,7 @@ namespace hik_camera
       nRet = MV_CC_SetFloatValue(camera_handle_, "ExposureTime", exposure_time);
       if (MV_OK != nRet)
       {
-        RCLCPP_WARN(this->get_logger(),"MV_CC_SetFloatValue exposure_time失败,错误码: [%x]", nRet);
+        RCLCPP_WARN(this->get_logger(), "MV_CC_SetFloatValue exposure_time失败,错误码: [%x]", nRet);
       }
       RCLCPP_INFO(this->get_logger(), "Exposure time: %f", exposure_time);
 
@@ -165,7 +184,7 @@ namespace hik_camera
       nRet = MV_CC_SetFloatValue(camera_handle_, "Gain", gain);
       if (MV_OK != nRet)
       {
-        RCLCPP_WARN(this->get_logger(),"MV_CC_SetFloatValue Gain失败,错误码:[%x]", nRet);
+        RCLCPP_WARN(this->get_logger(), "MV_CC_SetFloatValue Gain失败,错误码:[%x]", nRet);
       }
       RCLCPP_INFO(this->get_logger(), "Gain: %f", gain);
     }
@@ -182,11 +201,11 @@ namespace hik_camera
       MV_CC_SetIntValue(camera_handle_, "OffsetX", 0);
       MV_CC_SetIntValue(camera_handle_, "OffsetY", 0);
 
-      //int img_width = this->declare_parameter("image_width", 640);
+      // int img_width = this->declare_parameter("image_width", 640);
       RCLCPP_INFO(this->get_logger(), "Set image_width: [%d]", camera_info_msg_.width);
       MV_CC_SetIntValue(camera_handle_, "Width", camera_info_msg_.width);
-      
-      //int img_height = this->declare_parameter("image_height", 480);
+
+      // int img_height = this->declare_parameter("image_height", 480);
       RCLCPP_INFO(this->get_logger(), "Set image_height: [%d]", camera_info_msg_.height);
       MV_CC_SetIntValue(camera_handle_, "Height", camera_info_msg_.height);
 
@@ -194,7 +213,7 @@ namespace hik_camera
       MV_CC_SetIntValue(camera_handle_, "OffsetX", this->declare_parameter("offset_x", 0));
       MV_CC_SetIntValue(camera_handle_, "OffsetY", this->declare_parameter("offset_y", 0));
 
-      //MV_CC_SetEnumValue(camera_handle_, "PixelFormat", PixelType_Gvsp_RGB8_Packed);
+      // MV_CC_SetEnumValue(camera_handle_, "PixelFormat", PixelType_Gvsp_RGB8_Packed);
     }
 
     rcl_interfaces::msg::SetParametersResult parametersCallback(

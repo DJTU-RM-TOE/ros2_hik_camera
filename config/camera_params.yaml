@@ -2,7 +2,9 @@
   ros__parameters:
     camera_name: narrow_stereo
 
-    exposure_time: 5600
+    topic_name: "image_raw"
+
+    exposure_time: 8000
     gain: 0.0
 
     offset_x: 0
