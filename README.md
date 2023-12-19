@@ -12,3 +12,8 @@ ros2 launch hik_camera hik_camera.launch.py
 
 - exposure_time
 - gain
+
+## fix
+
+- Supports identifying camera order based on camera ID
+
